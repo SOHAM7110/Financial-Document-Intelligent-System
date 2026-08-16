@@ -1,0 +1,35 @@
+# --- Stage 1: ingestion & pipeline ---
+apscheduler==3.10.4
+requests==2.32.3
+beautifulsoup4==4.12.3
+pymupdf==1.24.10
+
+# --- Stage 2: NLP enrichment ---
+spacy==3.7.5
+transformers==4.44.2
+torch==2.4.1
+sentencepiece==0.2.0
+
+# --- Stage 3: experiment tracking ---
+mlflow==2.16.0
+
+# --- Stage 4: retrieval ---
+sentence-transformers==3.0.1
+chromadb==0.5.5
+rank-bm25==0.2.2
+
+# --- Stage 6: serving ---
+fastapi==0.115.0
+uvicorn==0.30.6
+pydantic==2.9.2
+
+# --- Stage 7: monitoring ---
+evidently==0.4.33
+
+# --- Stage 8: frontend ---
+streamlit==1.38.0
+plotly==5.24.0
+
+# --- shared ---
+pandas==2.2.2
+python-dotenv==1.0.1
