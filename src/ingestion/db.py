@@ -46,6 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON chunks(doc_id);
 """
 
+# Generates the current timestamp, which can be stored with documents/chunks to record when they were created or processed
 def _now() -> str:
     return datetime.now(ZoneInfo("Asia/Kolkata")).isoformat()
 
@@ -54,6 +55,7 @@ def _make_doc_id(nse_symbol : str, doc_type: str, sorce_url: str) -> str:
     raw = f"{nse_symbol} : {doc_type} : {sorce_url}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
+# Creates and manages a SQLite database connection, including committing changes and closing the connection safely
 @contextmanager
 def get_conn(db_path: str = REGISTRY_DB_PATH):
     Path(db_path).parent.mkdir(parents = True, exist_ok = True)
@@ -124,3 +126,44 @@ def mark_failed(doc_id: str, error_message: str, db_path: str = REGISTRY_DB_PATH
             "UPDATE documents SET status = 'failed', error_message = ? WHERE doc_id = ?",
             (error_message, doc_id),
         )
+
+
+# Inserts the chunks of a document into the chunks database table along with their metadata.
+def insert_chunks(doc_id : str, sections: list[tuple[str, str]], db_path: str = REGISTRY_DB_PATH) ->int:
+    """
+    to insert multiple text chunks belonging to a document 
+    into the chunks table in the database
+    """
+    now = _now()
+    rows = [
+        (f"{doc_id}_{i:03d}",  doc_id, section, i, text, len(text), now)
+        for i, (section, text) in enumerate (sections)
+    ]
+    with get_conn(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO chunks (chunk_id, doc_id, section, chunk_idex, text, char_count, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, rows,
+        )
+    return len(rows)
+
+
+def documents_by_status(status: str, db_path, str = REGISTRY_DB_PATH) -> list[sqlite3.Row]:
+    with get_conn(db_path) as conn:
+        return conn.execute(
+            "SELECT * FROM documents WHERE status = ? ORDER BY company", (status,)
+        ).fetchall()
+
+
+# Gives a summary of the chunks stored in the database, such as the number of chunks by status and the total number of chunks.
+def pipeline_summary(db_path: str = REGISTRY_DB_PATH) -> dict:
+    with get_conn(db_path) as conn:
+        rows = conn.execute(
+            "SELECT status, COUNT(*) as n FROM chunks"
+        ).fetchall()
+        chunk_count = conn.execute("SELECT COUNT (*) as n FROM chunks").fetchone()["n"]
+    summary = {row["status"] : row["n"] for row in rows}
+    summary["total_chunks"] = chunk_count
+    return summary
+    
