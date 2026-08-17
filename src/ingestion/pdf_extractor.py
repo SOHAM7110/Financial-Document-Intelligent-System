@@ -114,3 +114,24 @@ def _split_long_text(text: str, max_chars: int = MAX_CHUNK_CHAR) -> list[str]:
     if buffer.strip():
         chunks.append(buffer.strip())
     return chunks
+
+
+
+def chunk_pdf(pdf_path: str) -> list[tuple[str, str]]:
+    pages = extract_pages(pdf_path)
+    sections = split_into_sections(pages)
+
+    result: list[tuple[str, str]] = []
+
+    for section_name, text in sections:
+        sub_chunks = _split_long_text(text)
+        merged: list[str] = []
+        for sub_chunk in sub_chunks:
+            if merged and len(sub_chunk) < MIN_CHUNK_CHAR:
+                merged[-1] = f"{merged[-1]}\n\n{sub_chunk}".strip()
+            else:
+                merged.append(sub_chunk)
+        for chunk_text in merged:
+            if chunk_text.strip():
+                result.append((section_name, chunk_text))
+    return result
