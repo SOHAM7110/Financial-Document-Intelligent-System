@@ -42,7 +42,8 @@ MIN_CHUNK_CHAR = 150
 
 
 
-# to get textual content from the pdf
+# Extracts the text from every page of the PDF using PyMuPDF(fitz) and 
+# returns it as a list of page-wise text.
 """
 Output :
     [
@@ -59,7 +60,7 @@ def extract_pages(pdf_path: str) -> list[str]:
         doc.close()
 
 
-# to check whether a given line looks like one of the predefined section headings
+# to check whether a given line looks like one of the predefined regular expression (_SECTION_RE)
 def _extract_heading(line: str) -> str | None:
     stripped = line.strip()
     if not stripped or len(stripped) > 80:
@@ -69,6 +70,9 @@ def _extract_heading(line: str) -> str | None:
         return match.group(1).title()
     return None
 
+
+# Splits the extracted PDF text into logical financial-report sections 
+# such as Risk Factors, Balance Sheet, etc., and returns (section_name, text) pairs.
 def split_into_sections(pages: list[str]) -> list[tuple[str, str]]:
     full_text = "\n".join(pages)
     lines = full_text.split("\n")
@@ -82,10 +86,10 @@ def split_into_sections(pages: list[str]) -> list[tuple[str, str]]:
         if heading:
             if current_lines:
                 sections.append((current_section, current_lines))
-            current_section = heading
-            current_lines = []
+            current_section = heading # starting new section with blank heading
+            current_lines = []        # blank section content
         else:
-            current_lines.append(line)
+            current_lines.append(line)  # add lines in section under last found heading 
         if current_lines:
             sections.append((current_section, current_lines))
         return [(name, "\n".join(lines).strip()) for name, lines in sections if "".join(lines).strip()]
@@ -98,6 +102,9 @@ def split_into_sections(pages: list[str]) -> list[tuple[str, str]]:
             ]
     """
 
+
+# Splits a section that is too large into smaller chunks based on paragraph boundaries,
+# keeping each chunk within the maximum character limit.
 def _split_long_text(text: str, max_chars: int = MAX_CHUNK_CHAR) -> list[str]:
     if len(text) <= max_chars:
         return [text]
@@ -117,6 +124,8 @@ def _split_long_text(text: str, max_chars: int = MAX_CHUNK_CHAR) -> list[str]:
 
 
 
+# Runs the complete PDF-to-chunks pipeline: 
+# extracts text -> identifies sections -> splits long sections -> merges tiny trailing chunks -> returns final (section_name, chunk_text) pairs.
 def chunk_pdf(pdf_path: str) -> list[tuple[str, str]]:
     pages = extract_pages(pdf_path)
     sections = split_into_sections(pages)
