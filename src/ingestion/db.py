@@ -50,12 +50,16 @@ CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON chunks(doc_id);
 def _now() -> str:
     return datetime.now(ZoneInfo("Asia/Kolkata")).isoformat()
 
-# consistent ID for a document based on NSE symbol + document type + src url
+
+# create hash id for documents to avoid duplicates
 def _make_doc_id(nse_symbol : str, doc_type: str, sorce_url: str) -> str:
     raw = f"{nse_symbol} : {doc_type} : {sorce_url}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
-# Creates and manages a SQLite database connection, including committing changes and closing the connection safely
+
+# To create + manage DB connection
+# creates DB directory if needed
+# commits changes + closes connection safely
 @contextmanager
 def get_conn(db_path: str = REGISTRY_DB_PATH):
     Path(db_path).parent.mkdir(parents = True, exist_ok = True)
@@ -67,9 +71,12 @@ def get_conn(db_path: str = REGISTRY_DB_PATH):
     finally:
         conn.close()
 
+
+# CREATE 'documents' & 'chunks' tables
 def init_db(db_path: str = REGISTRY_DB_PATH) -> None:
     with get_conn(db_path) as conn:
         conn.executescript(SCHEMA)
+
 
 @dataclass
 class DocumentRecord:
@@ -78,19 +85,9 @@ class DocumentRecord:
     nse_symbol : str
     doc_type : str
     source_url : str
-
-def register_document(
-        company : str,
-        nse_symbol : str,
-        doc_type : str,
-        source_url : str,
-        db_path : str = REGISTRY_DB_PATH,
-) -> DocumentRecord:
-    """
-    Insert a document row if it dosent already exit
-    safe to call every time the scheduler runs without creating duplicates
-    """
-
+# Insert a document row if it dosent already exit
+def register_document(company : str, nse_symbol : str, doc_type : str, source_url : str, db_path : str = REGISTRY_DB_PATH) -> DocumentRecord:
+    # safe to call every time the scheduler runs without creating duplicates
     doc_id = _make_doc_id(nse_symbol, doc_type, source_url)
     with get_conn(db_path) as conn:
         conn.execute(
@@ -100,6 +97,8 @@ def register_document(
         )
         return DocumentRecord(doc_id, company, nse_symbol, doc_type, source_url)
 
+
+# Updates a document after downloading by storing its file path, SHA-256 hash, and download timestamp.
 def mark_downloaded(doc_id: str, raw_path: str, sha256_hash: str, db_path: str = REGISTRY_DB_PATH) -> None:
     with get_conn(db_path) as conn:
         conn.execute(
@@ -110,6 +109,8 @@ def mark_downloaded(doc_id: str, raw_path: str, sha256_hash: str, db_path: str =
             """,(raw_path, sha256_hash, _now(), doc_id)
         )
 
+
+# Marks a document as processed and records its page count and processing timestamp.
 def mark_processed(doc_id: str, page_count: int, db_path: str = REGISTRY_DB_PATH) -> None:
     with get_conn(db_path) as conn:
         conn.execute(
@@ -120,6 +121,8 @@ def mark_processed(doc_id: str, page_count: int, db_path: str = REGISTRY_DB_PATH
             """,(page_count, _now(), doc_id),
         )
 
+
+# Marks a document as failed and stores the error message explaining what went wrong.
 def mark_failed(doc_id: str, error_message: str, db_path: str = REGISTRY_DB_PATH) -> None:
     with get_conn(db_path) as conn:
         conn.execute(
@@ -128,7 +131,9 @@ def mark_failed(doc_id: str, error_message: str, db_path: str = REGISTRY_DB_PATH
         )
 
 
-# Inserts the chunks of a document into the chunks database table along with their metadata.
+# Inserts the extracted section-based chunks of a document into the chunks table 
+# along with metadata such as chunk index, 
+# character count, and creation time.
 def insert_chunks(doc_id : str, sections: list[tuple[str, str]], db_path: str = REGISTRY_DB_PATH) ->int:
     """
     to insert multiple text chunks belonging to a document 
@@ -149,6 +154,7 @@ def insert_chunks(doc_id : str, sections: list[tuple[str, str]], db_path: str = 
     return len(rows)
 
 
+# Retrieves all documents having a particular status, such as raw, processed, enriched, or failed.
 def documents_by_status(status: str, db_path, str = REGISTRY_DB_PATH) -> list[sqlite3.Row]:
     with get_conn(db_path) as conn:
         return conn.execute(
@@ -156,7 +162,7 @@ def documents_by_status(status: str, db_path, str = REGISTRY_DB_PATH) -> list[sq
         ).fetchall()
 
 
-# Gives a summary of the chunks stored in the database, such as the number of chunks by status and the total number of chunks.
+# Provides an overall pipeline summary: number of documents in each status + total number of chunks.
 def pipeline_summary(db_path: str = REGISTRY_DB_PATH) -> dict:
     with get_conn(db_path) as conn:
         rows = conn.execute(
